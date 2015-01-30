@@ -215,6 +215,8 @@ func parseDescriptor(spec string) Schedule {
 			Month:  all(months),
 			Dow:    all(dow),
 		}
+	case "@sunset", "@sunrise", "@dusk", "@dawn":
+		return NewSunSchedule(spec)
 	}
 
 	const every = "@every "
