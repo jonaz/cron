@@ -23,6 +23,15 @@ func TestSunScheduleNextSunrise(t *testing.T) {
 	t.Log(t1)
 }
 
+func TestSunScheduleNextSunsetOtherDate(t *testing.T) {
+
+	s := NewSunSchedule("@sunset * * 0")
+	t.Log(s)
+
+	t1 := s.Next(time.Now())
+	t.Log(t1)
+}
+
 func TestSunScheduleNextSunriseOtherDate(t *testing.T) {
 
 	s := NewSunSchedule("@sunrise * * 0")
