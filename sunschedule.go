@@ -48,24 +48,22 @@ func (s *SunSchedule) next() time.Time {
 		Dow:    getField(s.fields[2], dow),
 	}
 
-	//If next sun set/rise is today we need to make sure we calculate based on todays julian day
-	//if s.getSun(time.Now().Local()).Format("2006-01-02") == time.Now().Format("2006-01-02") {
-	//fmt.Print("SAME DAY")
-
 	//Start of today
 	now := time.Now().Local()
 	d := time.Duration(-now.Hour()) * time.Hour
 	return schedule.Next(now.Truncate(time.Hour).Add(d))
 
-	//return schedule.Next(s.getSun(time.Now().Local()))
-	//}
-	//return schedule.Next(time.Now().Local())
 }
 
 func (s *SunSchedule) Next(t time.Time) time.Time {
 	basetime := s.next()
-
 	fmt.Println(basetime)
+
+	if r := s.getSun(basetime); r.Before(time.Now().Local()) {
+		basetime = basetime.Add(time.Hour * 24)
+		fmt.Println("sunset/rise in the past, adding basetime +24h")
+		fmt.Println(basetime)
+	}
 
 	return s.getSun(basetime)
 
