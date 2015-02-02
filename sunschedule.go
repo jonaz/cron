@@ -39,22 +39,20 @@ func NewSunSchedule(state string) *SunSchedule {
 // So it can be fed to astrotime for checking sun on the correct day
 func (s *SunSchedule) next() time.Time {
 
-	//If next sun set/rise is today we need to make sure we calculate based on todays julian day
-	q := "0"
-	if s.getSun(time.Now().Local()).Format("2006-01-02") == time.Now().Format("2006-01-02") {
-		fmt.Print("SAME DAY")
-		q = "*"
-	}
-
 	schedule := &SpecSchedule{
-		Second: getField(q, seconds),
-		Minute: getField(q, minutes),
-		Hour:   getField(q, hours),
+		Second: getField("*", seconds),
+		Minute: getField("*", minutes),
+		Hour:   getField("*", hours),
 		Dom:    getField(s.fields[0], dom),
 		Month:  getField(s.fields[1], months),
 		Dow:    getField(s.fields[2], dow),
 	}
 
+	//If next sun set/rise is today we need to make sure we calculate based on todays julian day
+	if s.getSun(time.Now().Local()).Format("2006-01-02") == time.Now().Format("2006-01-02") {
+		fmt.Print("SAME DAY")
+		return schedule.Next(s.getSun(time.Now().Local()))
+	}
 	return schedule.Next(time.Now().Local())
 }
 
