@@ -40,7 +40,7 @@ func NewSunSchedule(state string) *SunSchedule {
 func (s *SunSchedule) next() time.Time {
 
 	schedule := &SpecSchedule{
-		Second: getField("*", seconds),
+		Second: getField("1", seconds),
 		Minute: getField("*", minutes),
 		Hour:   getField("*", hours),
 		Dom:    getField(s.fields[0], dom),
@@ -49,11 +49,17 @@ func (s *SunSchedule) next() time.Time {
 	}
 
 	//If next sun set/rise is today we need to make sure we calculate based on todays julian day
-	if s.getSun(time.Now().Local()).Format("2006-01-02") == time.Now().Format("2006-01-02") {
-		fmt.Print("SAME DAY")
-		return schedule.Next(s.getSun(time.Now().Local()))
-	}
-	return schedule.Next(time.Now().Local())
+	//if s.getSun(time.Now().Local()).Format("2006-01-02") == time.Now().Format("2006-01-02") {
+	//fmt.Print("SAME DAY")
+
+	//Start of today
+	now := time.Now().Local()
+	d := time.Duration(-now.Hour()) * time.Hour
+	return schedule.Next(now.Truncate(time.Hour).Add(d))
+
+	//return schedule.Next(s.getSun(time.Now().Local()))
+	//}
+	//return schedule.Next(time.Now().Local())
 }
 
 func (s *SunSchedule) Next(t time.Time) time.Time {
