@@ -14,6 +14,7 @@ type Cron struct {
 	entries  []*Entry
 	stop     chan struct{}
 	add      chan *Entry
+	remove   chan int
 	snapshot chan []*Entry
 	running  bool
 	count    int
@@ -80,6 +81,7 @@ func New() *Cron {
 		add:      make(chan *Entry),
 		stop:     make(chan struct{}),
 		snapshot: make(chan []*Entry),
+		remove:   make(chan int),
 		running:  false,
 		count:    0,
 	}
@@ -95,8 +97,11 @@ func (c *Cron) AddFunc(spec string, cmd func()) (int, error) {
 	return c.AddJob(spec, FuncJob(cmd))
 }
 
-// RemoveFunc removes a func from the Cron referenced by the id.
-func (c *Cron) RemoveFunc(id int) {
+// RemoveJob removes a func from the Cron referenced by the id.
+func (c *Cron) RemoveJob(id int) {
+	c.remove <- id
+}
+func (c *Cron) removeJob(id int) {
 	w := 0 // write index
 	for _, x := range c.entries {
 		if id == x.Id {
@@ -220,6 +225,8 @@ func (c *Cron) run() {
 			c.entries = append(c.entries, newEntry)
 			newEntry.Next = newEntry.Schedule.Next(now)
 
+		case id := <-c.remove:
+			c.removeJob(id)
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot()
 
