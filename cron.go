@@ -3,6 +3,7 @@
 package cron
 
 import (
+	"context"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -13,9 +14,8 @@ import (
 // be inspected while running.
 type Cron struct {
 	entries  []*Entry
-	stop     chan struct{}
 	add      chan *Entry
-	remove   chan int
+	remove   chan int64
 	snapshot chan []*Entry
 	running  bool
 	count    int64
@@ -78,13 +78,9 @@ func (s byTime) Less(i, j int) bool {
 // New returns a new Cron job runner.
 func New() *Cron {
 	return &Cron{
-		entries:  nil,
 		add:      make(chan *Entry),
-		stop:     make(chan struct{}),
 		snapshot: make(chan []*Entry),
-		remove:   make(chan int),
-		running:  false,
-		count:    0,
+		remove:   make(chan int64),
 	}
 }
 
@@ -99,7 +95,7 @@ func (c *Cron) AddFunc(spec string, cmd func()) (int64, error) {
 }
 
 // RemoveJob removes a func from the Cron referenced by the id.
-func (c *Cron) RemoveJob(id int) {
+func (c *Cron) RemoveJob(id int64) {
 	if !c.running {
 		return
 	}
@@ -108,10 +104,10 @@ func (c *Cron) RemoveJob(id int) {
 	case <-time.After(1 * time.Second):
 	}
 }
-func (c *Cron) removeJob(id int) {
+func (c *Cron) removeJob(id int64) {
 	w := 0 // write index
 	for _, x := range c.entries {
-		if id == int(x.ID) {
+		if id == x.ID {
 			continue
 		}
 		c.entries[w] = x
@@ -120,18 +116,18 @@ func (c *Cron) removeJob(id int) {
 	c.entries = c.entries[:w]
 }
 
-func (c *Cron) PauseFunc(id int) {
+func (c *Cron) PauseFunc(id int64) {
 	for _, x := range c.entries {
-		if id == int(x.ID) {
+		if id == x.ID {
 			x.Status = 1
 			break
 		}
 	}
 }
 
-func (c *Cron) ResumeFunc(id int) {
+func (c *Cron) ResumeFunc(id int64) {
 	for _, x := range c.entries {
-		if id == int(x.ID) {
+		if id == x.ID {
 			x.Status = 0
 			break
 		}
@@ -187,14 +183,14 @@ func (c *Cron) Entries() []*Entry {
 }
 
 // Start the cron scheduler in its own go-routine.
-func (c *Cron) Start() {
+func (c *Cron) Start(ctx context.Context) {
 	c.running = true
-	go c.run()
+	go c.run(ctx)
 }
 
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
-func (c *Cron) run() {
+func (c *Cron) run(ctx context.Context) {
 	// Figure out the next activation times for each entry.
 	now := time.Now().Local()
 	for _, entry := range c.entries {
@@ -238,22 +234,13 @@ func (c *Cron) run() {
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot()
 
-		case <-c.stop:
+		case <-ctx.Done():
 			return
 		}
 
 		// 'now' should be updated after newEntry and snapshot cases.
 		now = time.Now().Local()
 	}
-}
-
-// Stop the cron scheduler.
-func (c *Cron) Stop() {
-	select {
-	case c.stop <- struct{}{}:
-	case <-time.After(1 * time.Second):
-	}
-	c.running = false
 }
 
 // entrySnapshot returns a copy of the current cron entry list.
