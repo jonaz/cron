@@ -13,12 +13,13 @@ import (
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries  []*Entry
-	add      chan *Entry
-	remove   chan int64
-	snapshot chan []*Entry
-	running  bool
-	count    int64
+	entries   []*Entry
+	add       chan *Entry
+	remove    chan int64
+	removeAll chan struct{}
+	snapshot  chan []*Entry
+	running   bool
+	count     int64
 }
 
 // Job is an interface for submitted cron jobs.
@@ -78,9 +79,10 @@ func (s byTime) Less(i, j int) bool {
 // New returns a new Cron job runner.
 func New() *Cron {
 	return &Cron{
-		add:      make(chan *Entry),
-		snapshot: make(chan []*Entry),
-		remove:   make(chan int64),
+		add:       make(chan *Entry),
+		snapshot:  make(chan []*Entry),
+		remove:    make(chan int64),
+		removeAll: make(chan struct{}),
 	}
 }
 
@@ -101,6 +103,17 @@ func (c *Cron) RemoveJob(id int64) {
 	}
 	select {
 	case c.remove <- id:
+	case <-time.After(1 * time.Second):
+	}
+}
+
+// RemoveAll  removes all jobs
+func (c *Cron) RemoveAll() {
+	if !c.running {
+		return
+	}
+	select {
+	case c.removeAll <- struct{}{}:
 	case <-time.After(1 * time.Second):
 	}
 }
@@ -231,6 +244,8 @@ func (c *Cron) run(ctx context.Context) {
 
 		case id := <-c.remove:
 			c.removeJob(id)
+		case <-c.removeAll:
+			c.entries = nil
 		case <-c.snapshot:
 			c.snapshot <- c.entrySnapshot()
 
