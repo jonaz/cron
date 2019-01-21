@@ -110,8 +110,10 @@ func (c *Cron) RemoveJob(id int64) {
 // RemoveAll  removes all jobs
 func (c *Cron) RemoveAll() {
 	if !c.running {
+		c.entries = nil
 		return
 	}
+
 	select {
 	case c.removeAll <- struct{}{}:
 	case <-time.After(1 * time.Second):
