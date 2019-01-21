@@ -1,9 +1,10 @@
-// This library implements a cron spec parser and runner.  See the README for
+// Package cron implements a cron spec parser and runner.  See the README for
 // more details.
 package cron
 
 import (
 	"sort"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,7 +18,7 @@ type Cron struct {
 	remove   chan int
 	snapshot chan []*Entry
 	running  bool
-	count    int
+	count    int64
 }
 
 // Job is an interface for submitted cron jobs.
@@ -49,7 +50,7 @@ type Entry struct {
 	Job Job
 
 	// The identifier to reference the job instance.
-	Id int
+	ID int64
 
 	// 0: normal, 1: paused
 	Status int
@@ -93,18 +94,24 @@ type FuncJob func()
 func (f FuncJob) Run() { f() }
 
 // AddFunc adds a func to the Cron to be run on the given schedule.
-func (c *Cron) AddFunc(spec string, cmd func()) (int, error) {
+func (c *Cron) AddFunc(spec string, cmd func()) (int64, error) {
 	return c.AddJob(spec, FuncJob(cmd))
 }
 
 // RemoveJob removes a func from the Cron referenced by the id.
 func (c *Cron) RemoveJob(id int) {
-	c.remove <- id
+	if !c.running {
+		return
+	}
+	select {
+	case c.remove <- id:
+	case <-time.After(1 * time.Second):
+	}
 }
 func (c *Cron) removeJob(id int) {
 	w := 0 // write index
 	for _, x := range c.entries {
-		if id == x.Id {
+		if id == int(x.ID) {
 			continue
 		}
 		c.entries[w] = x
@@ -115,7 +122,7 @@ func (c *Cron) removeJob(id int) {
 
 func (c *Cron) PauseFunc(id int) {
 	for _, x := range c.entries {
-		if id == x.Id {
+		if id == int(x.ID) {
 			x.Status = 1
 			break
 		}
@@ -124,7 +131,7 @@ func (c *Cron) PauseFunc(id int) {
 
 func (c *Cron) ResumeFunc(id int) {
 	for _, x := range c.entries {
-		if id == x.Id {
+		if id == int(x.ID) {
 			x.Status = 0
 			break
 		}
@@ -134,7 +141,7 @@ func (c *Cron) ResumeFunc(id int) {
 // Status inquires the status of a job, 0: running, 1: paused, -1: not started.
 func (c *Cron) Status(id int) int {
 	for _, x := range c.entries {
-		if id == x.Id {
+		if id == int(x.ID) {
 			return x.Status
 		}
 	}
@@ -142,22 +149,23 @@ func (c *Cron) Status(id int) int {
 }
 
 // AddFunc adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) AddJob(spec string, cmd Job) (int, error) {
+func (c *Cron) AddJob(spec string, cmd Job) (int64, error) {
 	schedule, err := Parse(spec)
 	if err != nil {
 		return -1, err
 	}
-	c.count++
-	c.Schedule(schedule, cmd, c.count)
-	return c.count, nil
+	atomic.AddInt64(&c.count, 1)
+	i := atomic.LoadInt64(&c.count)
+	c.Schedule(schedule, cmd, i)
+	return i, nil
 }
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) Schedule(schedule Schedule, cmd Job, id int) {
+func (c *Cron) Schedule(schedule Schedule, cmd Job, id int64) {
 	entry := &Entry{
 		Schedule: schedule,
 		Job:      cmd,
-		Id:       id,
+		ID:       id,
 		Status:   0,
 	}
 	if !c.running {
@@ -241,7 +249,10 @@ func (c *Cron) run() {
 
 // Stop the cron scheduler.
 func (c *Cron) Stop() {
-	c.stop <- struct{}{}
+	select {
+	case c.stop <- struct{}{}:
+	case <-time.After(1 * time.Second):
+	}
 	c.running = false
 }
 
@@ -254,7 +265,7 @@ func (c *Cron) entrySnapshot() []*Entry {
 			Next:     e.Next,
 			Prev:     e.Prev,
 			Job:      e.Job,
-			Id:       e.Id,
+			ID:       e.ID,
 			Status:   e.Status,
 		})
 	}
